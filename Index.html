@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yoginder Kumar — RE Lab Terminal</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#06060f;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-height:100vh;padding:24px 16px;font-family:'Share Tech Mono',monospace}
+  h1{color:#00ffcc;font-size:13px;letter-spacing:3px;margin-bottom:16px;opacity:0.6}
+  #term{background:#0a0a0f;border:1px solid rgba(0,255,204,0.2);border-radius:10px;font-family:'Share Tech Mono',monospace;font-size:13px;color:#e0e0e0;overflow:hidden;display:flex;flex-direction:column;width:100%;max-width:860px;box-shadow:0 0 40px rgba(0,255,204,0.07)}
+  #titlebar{background:#111122;border-bottom:1px solid rgba(0,255,204,0.15);padding:9px 16px;display:flex;align-items:center;gap:8px}
+  .dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+  #titletext{flex:1;text-align:center;font-size:11px;color:rgba(0,255,204,0.6);letter-spacing:2px}
+  #screen{flex:1;padding:16px;overflow-y:auto;height:520px}
+  .line{min-height:18px;line-height:19px;white-space:pre-wrap;word-break:break-all}
+  .prompt{color:#ff2d78}.cmd{color:#f0f0f0}.out{color:#a0a0b8}.hi{color:#00ffcc}
+  .warn{color:#ff9900}.err{color:#ff2d78}.addr{color:#b06cff}.hex{color:#00cfff}
+  .dim{color:#333355}.ok{color:#39ff6a}.bold{color:#ffffff}
+  #inputrow{border-top:1px solid rgba(0,255,204,0.1);padding:10px 16px;display:flex;align-items:center;gap:8px;background:#080810}
+  #ps{color:#ff2d78;white-space:nowrap;font-size:13px}
+  #inp{background:transparent;border:none;outline:none;color:#f0f0f0;font-family:'Share Tech Mono',monospace;font-size:13px;flex:1;caret-color:#00ffcc}
+  #hint{padding:6px 16px 10px;font-size:11px;color:#222244;letter-spacing:1px}
+  ::-webkit-scrollbar{width:4px}
+  ::-webkit-scrollbar-track{background:#0a0a0f}
+  ::-webkit-scrollbar-thumb{background:rgba(0,255,204,0.2);border-radius:2px}
+</style>
+</head>
+<body>
+<h1>YOGINDER KUMAR // RE-LAB TERMINAL</h1>
+<div id="term">
+  <div id="titlebar">
+    <div class="dot" style="background:#ff2d78"></div>
+    <div class="dot" style="background:#ff9900"></div>
+    <div class="dot" style="background:#39ff6a"></div>
+    <div id="titletext">YOGINDER@RE-LAB — /home/analyst</div>
+  </div>
+  <div id="screen"></div>
+  <div id="inputrow">
+    <span id="ps">yoginder@re-lab:~$</span>
+    <input id="inp" autofocus autocomplete="off" spellcheck="false" placeholder="type 'help'">
+  </div>
+  <div id="hint">[ help · whoami · ls · analyze · pe · entropy · strings · disasm · yara · ioc · c2 · mitre · projects · certs ]</div>
+</div>
+
+<script>
+const screen = document.getElementById('screen');
+const inp = document.getElementById('inp');
+let cmdHistory = [], histIdx = -1;
+
+const SAMPLES = {
+  'agent_tesla.exe':{
+    hash:'a3f2c1d9e7b04561',sha256:'3a9f2c1d9e7b04561f2a3b4c5d6e7f8a9b0c1d2e',
+    size:'284 KB',packer:'UPX 3.96',ep:'0x00401000',
+    imports:['WSAStartup','HttpSendRequestA','RegSetValueExA','CryptAcquireContextA','GetAsyncKeyState'],
+    strings:['Mozilla/5.0','SOFTWARE\\Microsoft\\Windows NT','password','smtp.','keylog','AutoIt'],
+    c2:'103.45.67.89:4444',proto:'HTTP beaconing',beacon:'60s ±15s jitter',
+    exfil:'SMTP + HTTP POST',family:'AgentTesla',
+    mitre:{'T1055':'Process Injection','T1027':'Obfuscated Files or Information','T1071.001':'Application Layer Protocol: Web','T1056.001':'Input Capture: Keylogging','T1547.001':'Boot/Logon Autostart: Registry Run Keys'},
+    yara:'agent_tesla_v3',entropy:'6.21 (packed sections ~7.8)',
+    sections:[{name:'UPX0',va:'0x1000',size:'0 B',entropy:'0.00',flags:'RWX'},{name:'UPX1',va:'0x2000',size:'280 KB',entropy:'7.82',flags:'RX'},{name:'.rsrc',va:'0x48000',size:'4 KB',entropy:'3.14',flags:'R'}],
+    pe:{type:'PE32',arch:'x86',subsystem:'Windows GUI',timestamp:'2024-03-15 08:22:11 UTC',imports_count:47,exports_count:0,sections_count:3,tls:false,signed:false}
+  },
+  'mimidrv.sys':{
+    hash:'9d1a3c8f2e674b20',sha256:'9d1a3c8f2e674b2045abc123def456789012abcd',
+    size:'56 KB',packer:'None (signed PE)',ep:'0xFFFFF80012401000',
+    imports:['MmGetSystemRoutineAddress','PsLookupProcessByProcessId','ZwQuerySystemInformation','ObReferenceObjectByHandle'],
+    strings:['sekurlsa','lsass','mimikatz','NTLM','Kerberos','WDigest','KiSystemCall64'],
+    c2:'N/A',proto:'local privilege tool',beacon:'N/A',
+    exfil:'credential dump to disk / memory',family:'Mimikatz Driver',
+    mitre:{'T1003.001':'OS Credential Dumping: LSASS Memory','T1068':'Exploitation for Privilege Escalation','T1543.003':'Create or Modify System Process: Windows Service','T1562.001':'Impair Defenses: Disable or Modify Tools'},
+    yara:'mimikatz_driver',entropy:'5.87 (standard driver)',
+    sections:[{name:'.text',va:'0x1000',size:'36 KB',entropy:'5.92',flags:'RX'},{name:'.data',va:'0xA000',size:'4 KB',entropy:'2.11',flags:'RW'},{name:'.pdata',va:'0xB000',size:'8 KB',entropy:'4.88',flags:'R'},{name:'INIT',va:'0xD000',size:'8 KB',entropy:'5.01',flags:'RX (discardable)'}],
+    pe:{type:'PE32+',arch:'x64',subsystem:'Native (kernel)',timestamp:'2024-01-09 14:05:33 UTC',imports_count:18,exports_count:0,sections_count:4,tls:false,signed:true}
+  },
+  'ransom_cl0p.bin':{
+    hash:'7e2b8a5d3f910c44',sha256:'7e2b8a5d3f910c44aabbccddeeff00112233aabb',
+    size:'1.2 MB',packer:'Custom packer (entropy 7.89)',ep:'0x00401000',
+    imports:['CryptEncrypt','FindFirstFileW','MoveFileExW','CreateServiceW','DeleteShadowCopies'],
+    strings:['.cl0p_readme','.cl0p','{DECRYPTION_ID}','AES-256','DO NOT MODIFY','vssadmin delete shadows'],
+    c2:'hxxp://ekbgzchl6x2iqjrv[.]onion',proto:'TOR hidden service',beacon:'N/A (fire-and-forget)',
+    exfil:'pre-encryption double extortion exfil',family:'Cl0p Ransomware',
+    mitre:{'T1486':'Data Encrypted for Impact','T1083':'File and Directory Discovery','T1490':'Inhibit System Recovery','T1489':'Service Stop','T1078':'Valid Accounts (initial access)'},
+    yara:'cl0p_ransomware_v4',entropy:'7.89 (custom packer)',
+    sections:[{name:'.text',va:'0x1000',size:'200 KB',entropy:'7.91',flags:'RX'},{name:'.data',va:'0x33000',size:'8 KB',entropy:'6.44',flags:'RW'},{name:'.pack',va:'0x35000',size:'980 KB',entropy:'7.98',flags:'RWX'}],
+    pe:{type:'PE32',arch:'x86',subsystem:'Windows Console',timestamp:'2024-06-01 03:11:55 UTC',imports_count:62,exports_count:0,sections_count:3,tls:true,signed:false}
+  },
+  'njrat.exe':{
+    hash:'c4e1f7a2b9d30856',sha256:'c4e1f7a2b9d30856112233aabbccddeeff001122',
+    size:'112 KB',packer:'.NET (no packer)',ep:'0x00000000 (CLR managed)',
+    imports:['System.Net.Sockets','Microsoft.VisualBasic','System.IO','System.Diagnostics'],
+    strings:['njRAT','mutex_','BKDR_','cmd.exe','netsh firewall','keylog_path'],
+    c2:'185.220.101.55:5552',proto:'custom TCP binary protocol',beacon:'persistent connection',
+    exfil:'live keylog stream + file transfer',family:'njRAT v0.7d',
+    mitre:{'T1059.001':'Command and Scripting: PowerShell','T1105':'Ingress Tool Transfer','T1021.001':'Remote Services: RDP','T1056.001':'Input Capture: Keylogging','T1082':'System Information Discovery'},
+    yara:'njrat_v07d',entropy:'4.22 (.NET assemblies)',
+    sections:[{name:'.text',va:'0x2000',size:'100 KB',entropy:'4.18',flags:'RX'},{name:'.rsrc',va:'0x1A000',size:'8 KB',entropy:'3.77',flags:'R'},{name:'.reloc',va:'0x1C000',size:'4 KB',entropy:'1.92',flags:'R'}],
+    pe:{type:'PE32 (.NET)',arch:'MSIL',subsystem:'Windows GUI',timestamp:'2023-11-20 22:44:01 UTC',imports_count:4,exports_count:0,sections_count:3,tls:false,signed:false}
+  },
+};
+
+function s(cls,text){return{cls,text};}
+
+function printLines(lines,cb){
+  let i=0;
+  function next(){
+    if(i>=lines.length){cb&&cb();return;}
+    const l=lines[i++];
+    const div=document.createElement('div');
+    div.className='line '+(l.cls||'out');
+    div.textContent=l.text;
+    screen.appendChild(div);
+    screen.scrollTop=screen.scrollHeight;
+    setTimeout(next,16);
+  }
+  next();
+}
+
+function getSample(n){return SAMPLES[n]||null;}
+
+const COMMANDS={
+  help:()=>[
+    s('hi','  ╔══════════════════════════════════════════════════════╗'),
+    s('hi','  ║   RE-LAB Terminal  //  Malware Analysis Suite       ║'),
+    s('hi','  ╚══════════════════════════════════════════════════════╝'),
+    s('out',''),
+    s('bold','  ── ANALYST ──────────────────────────────────────────'),
+    s('out','  whoami              analyst profile'),
+    s('out','  projects            open source tools'),
+    s('out','  certs               certifications & achievements'),
+    s('out',''),
+    s('bold','  ── SAMPLES ──────────────────────────────────────────'),
+    s('out','  ls samples          list available malware samples'),
+    s('out','  analyze  <name>     full static analysis report'),
+    s('out','  pe       <name>     PE header deep-dive'),
+    s('out','  entropy  <name>     section entropy & packing detection'),
+    s('out','  strings  <name>     extract high-interest strings'),
+    s('out','  disasm   <name>     disassembly snippet'),
+    s('out',''),
+    s('bold','  ── DETECTION ─────────────────────────────────────────'),
+    s('out','  yara     <name>     generate YARA detection rule'),
+    s('out','  ioc      <name>     extract IOC report'),
+    s('out','  c2       <name>     C2 infrastructure analysis'),
+    s('out','  mitre    <name>     MITRE ATT&CK mapping'),
+    s('out',''),
+    s('bold','  ── SYSTEM ────────────────────────────────────────────'),
+    s('out','  clear               clear terminal'),
+    s('out','  history             command history'),
+    s('out',''),
+    s('warn','  samples: agent_tesla.exe  mimidrv.sys  ransom_cl0p.bin  njrat.exe'),
+  ],
+  whoami:()=>[
+    s('hi',''),
+    s('hi','   ██╗   ██╗ ██████╗  ██████╗ ██╗'),
+    s('hi','   ╚██╗ ██╔╝██╔═══██╗██╔════╝ ██║'),
+    s('hi','    ╚████╔╝ ██║   ██║██║  ███╗██║'),
+    s('hi','     ╚██╔╝  ██║   ██║██║   ██║██║'),
+    s('hi','      ██║   ╚██████╔╝╚██████╔╝██║'),
+    s('hi','      ╚═╝    ╚═════╝  ╚═════╝ ╚═╝'),
+    s('out',''),
+    s('bold',' ┌─────────────────────────────────────────────────┐'),
+    s('out','  name         Yoginder Kumar'),
+    s('out','  role         Security Researcher @ Trellix'),
+    s('out','  experience   4.5+ years'),
+    s('ok' ,'  domains      Malware RE · Detection Eng · Red Teaming · AWS Security'),
+    s('out','  tools        IDA Pro · Radare2 · Cuckoo · Any.Run · YARA · Burp Suite Pro'),
+    s('warn','  scale        111,000,000+ malware samples analysed'),
+    s('addr','  github       github.com/kumar-yoginder'),
+    s('addr','  linkedin     linkedin.com/in/kyogi'),
+    s('addr','  x            x.com/@ekasunyaasta'),
+    s('bold',' └─────────────────────────────────────────────────┘'),
+  ],
+  projects:()=>[
+    s('hi','  [+] open source projects'),
+    s('dim','  ────────────────────────────────────────────────────────'),
+    s('ok' ,'  Agrashandhani'),
+    s('out','  Multi-source OSINT threat intelligence aggregator'),
+    s('hex','  4+ TI platforms · 14+ IOC types · <100ms cache hits · SOAR-ready'),
+    s('addr','  → github.com/kumar-yoginder/agrashandhani'),
+    s('out',''),
+    s('ok' ,'  Chitragupt'),
+    s('out','  IAM service with 5-tier RBAC (Telegram bot)'),
+    s('hex','  Pydantic v2 · Docker hardened · 68 tests · EXIF forensics'),
+    s('addr','  → github.com/kumar-yoginder/chitragupt'),
+    s('out',''),
+    s('ok' ,'  Kurukshetra-Ops'),
+    s('out','  Security operations toolkit — offensive & defensive research'),
+    s('hex','  Pentest automation · detection validation · IOC tooling'),
+    s('addr','  → github.com/kumar-yoginder/kurukshetra-ops'),
+    s('dim','  ────────────────────────────────────────────────────────'),
+  ],
+  certs:()=>[
+    s('hi','  [+] certifications & achievements'),
+    s('dim','  ────────────────────────────────────────────────────────'),
+    s('ok' ,'  [2025-07]  AWS Essential Training for Developers — LinkedIn Learning'),
+    s('ok' ,'  [2025-05]  Career Essentials in Cybersecurity — Microsoft & LinkedIn'),
+    s('ok' ,'  [2025-04]  Penetration Testing Professional — Cybrary'),
+    s('ok' ,'  [2025-04]  Offensive Penetration Testing — LinkedIn Learning'),
+    s('warn','  [2025-05]  PUBLISHED: ML Framework for Credit Card Fraud Detection — MKSES'),
+    s('addr','  [2024-06]  PATENT: IoT Smart Agriculture Monitoring & Control Device'),
+    s('ok' ,'  [2024-08]  Python: Design Patterns — LinkedIn Learning'),
+    s('warn','  [2022-05]  PUBLISHED: Application of ML in IoT — IJRASET (IF 7.4)'),
+    s('ok' ,'  [2020-06]  CEH: Certified Ethical Hacker'),
+    s('addr','  [2019-01]  Top 5% NPTEL — Problem Solving Through Programming in C'),
+    s('dim','  ────────────────────────────────────────────────────────'),
+  ],
+  'ls samples':()=>[
+    s('dim','  name                  size      family               hash (partial)'),
+    s('dim','  ──────────────────────────────────────────────────────────────────────'),
+    s('warn','  agent_tesla.exe       284 KB    AgentTesla           a3f2c1d9...'),
+    s('err' ,'  mimidrv.sys           56 KB     Mimikatz Driver      9d1a3c8f...'),
+    s('err' ,'  ransom_cl0p.bin       1.2 MB    Cl0p Ransomware      7e2b8a5d...'),
+    s('hex' ,'  njrat.exe             112 KB    njRAT v0.7d          c4e1f7a2...'),
+    s('dim','  ──────────────────────────────────────────────────────────────────────'),
+    s('out','  run: analyze <name>  to begin'),
+  ],
+  history:(h)=>{
+    if(!h.length) return [s('out','  no history yet')];
+    return [s('hi','  [+] command history'),...h.map((c,i)=>s('out',`  ${String(i+1).padStart(3,'0')}  ${c}`))];
+  },
+};
+
+function cmdAnalyze(name){
+  const m=getSample(name);
+  if(!m) return [s('err',`  error: '${name}' not found. try: ls samples`)];
+  return [
+    s('hi' ,`  [+] static analysis: ${name}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('out',`  file         ${name}`),
+    s('out',`  size         ${m.size}`),
+    s('addr',`  md5          ${m.hash}`),
+    s('addr',`  sha256       ${m.sha256}`),
+    s('out',`  entry point  ${m.ep}`),
+    s('warn',`  packer       ${m.packer}`),
+    s('warn',`  entropy      ${m.entropy}`),
+    s('err' ,`  family       ${m.family}`),
+    s('out',''),
+    s('out','  notable imports:'),
+    ...m.imports.map(i=>s('hex',`    ├─ ${i}`)),
+    s('out',''),
+    s('warn',`  c2           ${m.c2}`),
+    s('out',`  protocol     ${m.proto}`),
+    s('out',`  exfil        ${m.exfil}`),
+    s('ok'  ,`  yara rule    ${m.yara}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('ok' ,`  next: pe ${name} · mitre ${name} · yara ${name}`),
+  ];
+}
+
+function cmdPE(name){
+  const m=getSample(name);
+  if(!m) return [s('err',`  error: '${name}' not found.`)];
+  const p=m.pe;
+  return [
+    s('hi' ,`  [+] PE header: ${name}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('out',`  type            ${p.type}`),
+    s('out',`  architecture    ${p.arch}`),
+    s('out',`  subsystem       ${p.subsystem}`),
+    s('addr',`  compile time    ${p.timestamp}`),
+    s('out',`  import count    ${p.imports_count}`),
+    s('out',`  export count    ${p.exports_count}`),
+    s('out',`  section count   ${p.sections_count}`),
+    s('out',`  TLS callbacks   ${p.tls?'YES (suspicious)':'none'}`),
+    s(p.signed?'ok':'warn',`  authenticode    ${p.signed?'signed (valid)':'NOT signed'}`),
+    s('out',''),
+    s('out','  sections:'),
+    s('dim','  name       VA         size      entropy  flags'),
+    s('dim','  ─────────────────────────────────────────────────'),
+    ...m.sections.map(sec=>{
+      const hi=parseFloat(sec.entropy)>7.0?'warn':parseFloat(sec.entropy)>6.0?'hex':'out';
+      return s(hi,`  ${sec.name.padEnd(10)} ${sec.va.padEnd(11)} ${sec.size.padEnd(10)} ${sec.entropy.padEnd(8)} ${sec.flags}`);
+    }),
+    s('dim','  ─────────────────────────────────────────────────'),
+    s(p.signed?'ok':'err',`  verdict: ${p.signed?'signed binary — verify certificate chain':'unsigned binary'}`),
+  ];
+}
+
+function cmdEntropy(name){
+  const m=getSample(name);
+  if(!m) return [s('err',`  error: '${name}' not found.`)];
+  const lines=[
+    s('hi' ,`  [+] entropy analysis: ${name}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('out','  scale: 0.0 (plain text) ──────────────── 8.0 (encrypted)'),
+    s('out',''),
+  ];
+  m.sections.forEach(sec=>{
+    const val=parseFloat(sec.entropy);
+    const filled=Math.round(val/8*24);
+    const bar='█'.repeat(filled)+'░'.repeat(24-filled);
+    const color=val>7.5?'err':val>6.5?'warn':val>5?'hex':'ok';
+    lines.push(s(color,`  ${sec.name.padEnd(8)}  [${bar}]  ${sec.entropy}  ${sec.flags}`));
+  });
+  const overall=parseFloat(m.entropy);
+  lines.push(s('out',''));
+  if(overall>7.5) lines.push(s('err','  [!] HIGH ENTROPY — strongly suggests encryption or packing'));
+  else if(overall>6.5) lines.push(s('warn','  [!] ELEVATED ENTROPY — possible packer or obfuscation'));
+  else lines.push(s('ok','  [+] NORMAL ENTROPY — likely unpacked binary'));
+  lines.push(s('out',`  overall: ${m.entropy}`));
+  return lines;
+}
+
+function cmdStrings(name){
+  const m=getSample(name);
+  if(!m) return [s('err',`  error: '${name}' not found.`)];
+  return [
+    s('hi' ,`  [+] interesting strings: ${name}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    ...m.strings.map((str,i)=>{
+      const offset='0x'+(0x401000+i*0x34).toString(16).toUpperCase().padStart(8,'0');
+      return s('hex',`  ${offset}  "${str}"`);
+    }),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('out',`  ${m.strings.length} high-interest strings · run ioc ${name} for structured report`),
+  ];
+}
+
+function cmdIOC(name){
+  const m=getSample(name);
+  if(!m) return [s('err',`  error: '${name}' not found.`)];
+  return [
+    s('hi' ,`  [+] IOC report: ${name}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('bold','  HASHES'),
+    s('hex' ,`  MD5      ${m.hash}`),
+    s('hex' ,`  SHA256   ${m.sha256}`),
+    s('out',''),
+    s('bold','  NETWORK'),
+    s('warn',`  C2       ${m.c2}`),
+    s('out', `  Proto    ${m.proto}`),
+    s('out',''),
+    s('bold','  HOST-BASED'),
+    ...m.strings.filter(s=>s.includes('\\')||s.includes('.exe')||s.includes('.sys')||s.includes('.cl0p')||s.includes('mutex')||s.includes('vss')).slice(0,4).map(str=>s('warn',`  artefact  "${str}"`)),
+    s('out',''),
+    s('bold','  FAMILY'),
+    s('err', `  ${m.family}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('ok' ,'  [*] ready for SIEM · SOAR · threat intel platform ingestion'),
+  ];
+}
+
+function cmdDisasm(name){
+  const m=getSample(name);
+  if(!m) return [s('err',`  error: '${name}' not found.`)];
+  const snippets={
+    'agent_tesla.exe':[
+      s('dim','  ; entry point stub (post-unpack)'),
+      s('addr','  0x00401000'),s('hex','  push   ebp'),
+      s('addr','  0x00401001'),s('hex','  mov    ebp, esp'),
+      s('addr','  0x00401003'),s('hex','  sub    esp, 0x40'),
+      s('addr','  0x00401006'),s('hex','  call   0x00401A20    ; decrypt_config()'),
+      s('addr','  0x0040100B'),s('hex','  call   0x00401C44    ; init_keylogger()'),
+      s('addr','  0x00401010'),s('hex','  call   0x00401E10    ; establish_persistence()'),
+      s('addr','  0x00401015'),s('hex','  call   0x00401F00    ; connect_c2()'),
+      s('warn','  ; T1056.001 · T1547.001 · T1071.001'),
+    ],
+    'mimidrv.sys':[
+      s('dim','  ; DriverEntry — kernel SSDT hook'),
+      s('addr','  0xFFFFF80012401000'),s('hex','  sub    rsp, 0x28'),
+      s('addr','  0xFFFFF80012401004'),s('hex','  lea    rcx, [aNtQuerySys]'),
+      s('addr','  0xFFFFF80012401009'),s('hex','  call   MmGetSystemRoutineAddress'),
+      s('addr','  0xFFFFF8001240100E'),s('hex','  mov    [rbp+NtQuerySysInfo], rax'),
+      s('addr','  0xFFFFF80012401012'),s('hex','  call   PatchKiSystemCall64    ; hook SSDT'),
+      s('addr','  0xFFFFF80012401017'),s('hex','  call   DumpLsassMemory'),
+      s('warn','  ; T1003.001 · T1068'),
+    ],
+    'ransom_cl0p.bin':[
+      s('dim','  ; encryption loop core'),
+      s('addr','  0x004080A0'),s('hex','  push   PROV_RSA_AES'),
+      s('addr','  0x004080A5'),s('hex','  call   CryptAcquireContextA'),
+      s('addr','  0x004080AA'),s('hex','  push   CALG_AES_256'),
+      s('addr','  0x004080AF'),s('hex','  call   CryptGenKey'),
+      s('addr','  0x004080B4'),s('hex','  call   enumerate_and_encrypt'),
+      s('addr','  0x004080B9'),s('hex','  call   vssadmin_delete_shadows'),
+      s('addr','  0x004080BE'),s('hex','  push   offset ".cl0p_readme"'),
+      s('addr','  0x004080C3'),s('hex','  call   drop_ransom_note'),
+      s('warn','  ; T1486 · T1490'),
+    ],
+    'njrat.exe':[
+      s('dim','  ; .NET managed entry — C2 connect loop'),
+      s('addr','  IL_0000'),s('hex','  ldstr  "185.220.101.55"'),
+      s('addr','  IL_0005'),s('hex','  ldc.i4 5552'),
+      s('addr','  IL_000A'),s('hex','  newobj TcpClient::.ctor(string, int32)'),
+      s('addr','  IL_000F'),s('hex','  callvirt NetworkStream::GetStream()'),
+      s('addr','  IL_0014'),s('hex','  call   KeylogLoop::Start()'),
+      s('addr','  IL_0019'),s('hex','  call   CommandDispatch::Run()'),
+      s('warn','  ; T1056.001 · T1059.001 · T1105'),
+    ],
+  };
+  return [s('hi',`  [+] disassembly: ${name}`),s('out',''),...(snippets[name]||[s('err','  no disasm available')]),s('dim','  ...')];
+}
+
+function cmdYara(name){
+  const m=getSample(name);
+  if(!m) return [s('err',`  error: '${name}' not found.`)];
+  return [
+    s('hi' ,`  [+] YARA rule: ${m.yara}`),s('out',''),
+    s('ok' ,`  rule ${m.yara} {`),
+    s('ok' ,'    meta:'),
+    s('hex',`      author   = "Yoginder Kumar"`),
+    s('hex',`      family   = "${m.family}"`),
+    s('hex',`      hash     = "${m.hash}"`),
+    s('hex',`      date     = "2025"`),
+    s('ok' ,'    strings:'),
+    ...m.strings.slice(0,3).map((st,i)=>s('hex',`      $s${i} = "${st}" ascii wide nocase`)),
+    ...m.imports.slice(0,2).map((im,i)=>s('addr',`      $api${i} = "${im}"`)),
+    s('ok' ,'    condition:'),
+    s('warn','      uint16(0) == 0x5A4D and'),
+    s('warn','      filesize < 5MB and'),
+    s('warn','      2 of ($s*) and'),
+    s('warn','      1 of ($api*)'),
+    s('ok' ,'  }'),s('out',''),
+    s('dim','  [*] tune FP threshold · test against clean corpus before production'),
+  ];
+}
+
+function cmdC2(name){
+  const m=getSample(name);
+  if(!m) return [s('err',`  error: '${name}' not found.`)];
+  return [
+    s('hi' ,`  [+] C2 analysis: ${name}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('warn',`  endpoint     ${m.c2}`),
+    s('out', `  protocol     ${m.proto}`),
+    s('out', `  beacon       ${m.beacon}`),
+    s('err', `  exfil        ${m.exfil}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('ok' ,'  recommended actions:'),
+    s('out','    1. block C2 IOCs at perimeter firewall / proxy'),
+    s('out','    2. add IPS signature for beacon pattern'),
+    s('out','    3. hunt environment for persistence (run: mitre '+name+')'),
+    s('out','    4. ingest IOCs into SIEM (run: ioc '+name+')'),
+  ];
+}
+
+function cmdMitre(name){
+  const m=getSample(name);
+  if(!m) return [s('err',`  error: '${name}' not found.`)];
+  const entries=Object.entries(m.mitre);
+  return [
+    s('hi' ,`  [+] MITRE ATT&CK: ${m.family}`),
+    s('dim','  ────────────────────────────────────────────────────'),
+    ...entries.map(([id,desc])=>s('warn',`  ${id.padEnd(16)} ${desc}`)),
+    s('dim','  ────────────────────────────────────────────────────'),
+    s('addr',`  https://attack.mitre.org/  (${entries.length} techniques mapped)`),
+  ];
+}
+
+function run(raw){
+  const cmd=raw.trim();
+  if(!cmd) return;
+  if(cmd!=='history') cmdHistory.push(cmd);
+  histIdx=cmdHistory.length;
+  const div=document.createElement('div');
+  div.className='line';
+  div.innerHTML=`<span class="prompt">yoginder@re-lab:~$ </span><span class="cmd">${cmd.replace(/</g,'&lt;')}</span>`;
+  screen.appendChild(div);
+  screen.scrollTop=screen.scrollHeight;
+  const lower=cmd.toLowerCase();
+  let lines=[];
+  if(lower==='help') lines=COMMANDS.help();
+  else if(lower==='whoami') lines=COMMANDS.whoami();
+  else if(lower==='projects') lines=COMMANDS.projects();
+  else if(lower==='certs') lines=COMMANDS.certs();
+  else if(lower==='ls'||lower==='ls samples') lines=COMMANDS['ls samples']();
+  else if(lower==='clear'){screen.innerHTML='';return;}
+  else if(lower==='history') lines=COMMANDS.history(cmdHistory);
+  else if(lower.startsWith('analyze ')) lines=cmdAnalyze(cmd.slice(8).trim());
+  else if(lower.startsWith('pe '))      lines=cmdPE(cmd.slice(3).trim());
+  else if(lower.startsWith('entropy ')) lines=cmdEntropy(cmd.slice(8).trim());
+  else if(lower.startsWith('strings ')) lines=cmdStrings(cmd.slice(8).trim());
+  else if(lower.startsWith('disasm '))  lines=cmdDisasm(cmd.slice(7).trim());
+  else if(lower.startsWith('yara '))    lines=cmdYara(cmd.slice(5).trim());
+  else if(lower.startsWith('c2 '))      lines=cmdC2(cmd.slice(3).trim());
+  else if(lower.startsWith('mitre '))   lines=cmdMitre(cmd.slice(6).trim());
+  else if(lower.startsWith('ioc '))     lines=cmdIOC(cmd.slice(4).trim());
+  else lines=[s('err',`  command not found: ${cmd}`),s('out','  type help for available commands')];
+  printLines(lines);
+}
+
+inp.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const v=inp.value;inp.value='';run(v);}
+  else if(e.key==='ArrowUp'){e.preventDefault();if(histIdx>0){histIdx--;inp.value=cmdHistory[histIdx];}}
+  else if(e.key==='ArrowDown'){e.preventDefault();if(histIdx<cmdHistory.length-1){histIdx++;inp.value=cmdHistory[histIdx];}else{histIdx=cmdHistory.length;inp.value='';}}
+});
+
+const boot=[
+  s('dim','  ┌──────────────────────────────────────────────────────┐'),
+  s('hi' ,'  │   RE-LAB v2.5  //  Malware Analysis Environment     │'),
+  s('dim','  └──────────────────────────────────────────────────────┘'),
+  s('out',''),
+  s('out','  kernel      Linux re-lab 6.6.0-kali3-amd64 #1 SMP'),
+  s('ok' ,'  modules     [OK] static-analysis  yara-engine  pe-parser  ioc-extractor'),
+  s('warn','  caution     environment contains simulated malware analysis data'),
+  s('out','  tip         use ↑↓ arrows to navigate command history'),
+  s('out',''),
+  s('out','  type help to begin.'),
+  s('out',''),
+];
+printLines(boot);
+</script>
+</body>
+</html>
