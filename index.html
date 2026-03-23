@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Yoginder Kumar — RE Lab Terminal</title>
-<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAACXBIWXMAAAsTAAALEwEAmpwYAAAD9klEQVR4nO2dS2hcVRjHf+fOJJN0mkySNDYm2mAtiqAgiLhS8YV8gS7E6sZFEF0IunChitSFC90I7sSNC90IunChLlxI8Y0iYpS2YhSbtibNm6SdSfN6X+6ZidpMmsS8z7mZOf8fBsK9957fN+fc737n3AsZhiAIgiAIgiAIgiAIgiAIguD/S5ZlI622f67V9v9O2u2Z873e3K7h3060Xm8X3z/S6Txe6/XmtuT70m7PzOfZ9u8C6P7Z683t66p37WpE66vL8fN/X/U5z3DAnZ9fD6AbZ687f+K696D7V687v28ofgGZ6A0f6fXmv6vD/7p3978LIGC6N/znR0PxT0q93vzt97fN6rD/p9frfTIY6ZOnWvV6Y5p3z8eP9Xpzn+z5+3+81I7GZ8vA/9T7m2YlZfBf1ev1Ph6U+e9PvtUuT0r0P+315j+e6Oatq2G5fW6pXW7Wf1BofU6i/+U8Xl8e9B74YqBfS+z/3mC8T9T8YpDPr9WrvD9R/zPzfXf7/p69vsh37v0qB8Bv6f06S+qP+3K7zAn7X9X69R06/rO89vjH/X89AIBfWf+mGfNf/10V7X8Y/0W9X+UAmL/7I6qX/6Hfr3IAfK3Pr7X+Y/6V369yAEx777f+77XWf9i7Z9Z7P957H5K3/qPevXNuOOf9KscX+Pvef+N/6/uK1v+M165yAKz0/kTrf9679/6o8m+f663f7/u7660vS/T7f+z7VQ4AlvXet95fS/T/6PePH6o8mO5Y70f1/q3vG785f8n939Xf+p0Z731H689531T2/G9vBv6V3v9+0P+31f2f896bZc5f1H/K+9U671vXvP/A+99m6X/K++f+q/eL9f6LveU635/WvP+597792v6Z8t7Z9P7t5f9YpT+sYf9p79tLnzfKnj+t7u94//fFfI/f9+S09y97/81N/6n63y97f/O650+V88788f+6/vP9+a4z3t8v2/9qf36t3v8U//3j1O8/S/W/8H9r/676P9T4+v9676v7X9Yv9L939H+x78u6H8p6H539f1NfX7z7v9H9/Yn+7/X8+0R/u/t3o55/t+rf+fX1l937Z1L/DOf79V7/86T+f69f8v87rf9X0f9m6Z87+U6/f5vV5++l598u/fP6Z7fP50P9M8W/pX5ZfH/+5D9X/9/Z/7e9v1p/1vv+fP0Zf8Zfn8/Xn/U/V93/P0NfX9/7ZtWf8fX9b0Zff5rrj8fX7/V9S9T7S19ff4m+vr73zXp9/W7V9Vff+7K+P1r/6p8v+/9G9/0f/v2/AAMAcFof98R+e78AAAAASUVORK5CYII=">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -19,6 +19,7 @@
   .prompt{color:#ff2d78}.cmd{color:#f0f0f0}.out{color:#a0a0b8}.hi{color:#00ffcc}
   .warn{color:#ff9900}.err{color:#ff2d78}.addr{color:#b06cff}.hex{color:#00cfff}
   .dim{color:#333355}.ok{color:#39ff6a}.bold{color:#ffffff}
+  .addr a{color:inherit;text-decoration:underline;text-underline-offset:3px}.addr a:hover{opacity:0.75}
   #inputrow{border-top:1px solid rgba(0,255,204,0.1);padding:10px 16px;display:flex;align-items:center;gap:8px;background:#080810}
   #ps{color:#ff2d78;white-space:nowrap;font-size:13px}
   #inp{background:transparent;border:none;outline:none;color:#f0f0f0;font-family:'Share Tech Mono',monospace;font-size:13px;flex:1;caret-color:#00ffcc}
@@ -103,6 +104,21 @@ const SAMPLES = {
 
 function s(cls,text){return{cls,text};}
 
+function linkify(text){
+  const urlRe=/(https?:\/\/[^\s]+|(?:github|linkedin|x)\.com\/[^\s]+)/g;
+  let result='',last=0,m;
+  function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  while((m=urlRe.exec(text))!==null){
+    result+=esc(text.slice(last,m.index));
+    const raw=m[0];
+    const href=(raw.startsWith('http')?raw:'https://'+raw).replace(/"/g,'%22');
+    result+=`<a href="${href}" target="_blank" rel="noopener noreferrer">${esc(raw)}</a>`;
+    last=m.index+raw.length;
+  }
+  result+=esc(text.slice(last));
+  return result;
+}
+
 function printLines(lines,cb){
   let i=0;
   function next(){
@@ -110,7 +126,8 @@ function printLines(lines,cb){
     const l=lines[i++];
     const div=document.createElement('div');
     div.className='line '+(l.cls||'out');
-    div.textContent=l.text;
+    if(l.cls==='addr'){div.innerHTML=linkify(l.text);}
+    else{div.textContent=l.text;}
     screen.appendChild(div);
     screen.scrollTop=screen.scrollHeight;
     setTimeout(next,16);
